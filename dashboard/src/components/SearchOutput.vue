@@ -136,14 +136,15 @@ function updateAuth(): Promise<void> {
   status.value.show = false
   const url = config.rootURL(decodeURIComponent(selectedServer.value))
   return fetch(url)
-    .then((response) => response.json())
-    .then((data) => {
-      authentication.value = data.authentication
+    .then((response) => {
+      if (!response.ok) return  // server not reachable or redirected — silently ignore,
+      return response.json()   // requiresAuth() uses config.serverConfig as primary source
     })
-    .catch(function (error) {
-      status.value.show = true
-      status.value.text = error
-      status.value.type = 'error'
+    .then((data) => {
+      if (data) authentication.value = data.authentication
+    })
+    .catch(function () {
+      // silently ignore — the actual data fetches will show proper errors
     })
 }
 
@@ -295,6 +296,7 @@ function fetchData(username: string, password: string) {
   status.value.show = false
   fetch(url + '/simulations?' + query, args)
     .then((response) => {
+      if (!response.ok) throw new Error('Cannot reach ITER SimDB server (HTTP ' + response.status + '). Are you connected to the ITER network or VPN?')
       return response.json()
     })
     .then((data: any) => {
@@ -316,7 +318,7 @@ function fetchData(username: string, password: string) {
       status.value.show = true
       // For more specific error handling:
       if (error.message.includes('NetworkError when attempting to fetch resource.') || error.message.includes('JSON.parse: unexpected character at line 1 column 1 of the JSON data')) {
-        status.value.text = 'Search failed: Invalid query parameters. Please check your search criteria and try again.'
+        status.value.text = 'Cannot reach ITER SimDB server. Make sure you are connected to the ITER network or VPN.'
       } else if (error.message.includes('400')) {
         status.value.text = 'Bad request: Please verify your search parameters.'
       } else if (error.message.includes('500')) {

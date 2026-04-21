@@ -1,3 +1,8 @@
 dashboard/dist
 dashboard/node_modules
 .idea
+
+# Local env files — may contain session cookies, never commit
+.env.local
+dashboard/.env.local
+

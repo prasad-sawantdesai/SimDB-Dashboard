@@ -26,8 +26,30 @@ function getVersionFromGit() {
 
 const version = getVersionFromGit()
 
+// MRHSession cookie from keyring (via dev-auth.sh) or .env.local
+// Injected into the proxy so the ITER BIG-IP perimeter lets requests through.
+const mrhSession = process.env.VITE_MRH_SESSION ?? ''
+
 // https://vitejs.dev/config/
 export default defineConfig({
+  server: {
+    proxy: {
+      '/scenarios': {
+        target: 'https://simdb.iter.org',
+        changeOrigin: true,
+        secure: true,
+        ...(mrhSession && {
+          headers: { cookie: `MRHSession=${mrhSession}` }
+        }),
+        configure: (proxy) => {
+          proxy.on('proxyRes', (proxyRes) => {
+            // Strip Set-Cookie so the BIG-IP session stays server-side only
+            delete proxyRes.headers['set-cookie']
+          })
+        },
+      }
+    }
+  },
   plugins: [
     vue({
       script: {

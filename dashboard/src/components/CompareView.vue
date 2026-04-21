@@ -79,14 +79,15 @@ function updateAuth() {
   status.value.show = false
   const url = config.rootURL(decodeURIComponent(server.value))
   return fetch(url)
-    .then((response) => response.json())
-    .then((data) => {
-      authentication.value = data.authentication
+    .then((response) => {
+      if (!response.ok) return
+      return response.json()
     })
-    .catch(function (error) {
-      status.value.show = true
-      status.value.text = error
-      status.value.type = 'error'
+    .then((data) => {
+      if (data) authentication.value = data.authentication
+    })
+    .catch(function () {
+      // silently ignore — the actual data fetches will show proper errors
     })
 }
 
@@ -159,7 +160,10 @@ function setItems(username: string, password: string) {
 
   uuids.value.forEach(function (uuid) {
     fetch(url + '/simulation/' + uuid, args)
-      .then((response) => response.json())
+      .then((response) => {
+        if (!response.ok) throw new Error('Cannot reach ITER SimDB server (HTTP ' + response.status + '). Are you connected to the ITER network or VPN?')
+        return response.json()
+      })
       .then((data) => {
         let simulation = {
           alias: data.alias,

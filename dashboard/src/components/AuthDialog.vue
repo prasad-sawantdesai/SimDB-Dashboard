@@ -40,7 +40,10 @@ function storeToken(_evt: any) {
     }
   }
   fetch(url + '/token', args)
-    .then((response) => response.json())
+    .then((response) => {
+      if (!response.ok) throw new Error('Authentication failed (HTTP ' + response.status + ')')
+      return response.json()
+    })
     .then((data) => {
       const token = data.token
       window.sessionStorage.setItem('simdb-token-' + props.server, token)

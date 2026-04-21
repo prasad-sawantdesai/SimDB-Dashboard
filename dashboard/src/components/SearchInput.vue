@@ -181,7 +181,10 @@ function setItems() {
       }
       else{
         fetch(url + '/metadata/' + name)
-        .then((response) => response.json())
+        .then((response) => {
+          if (!response.ok) throw new Error('HTTP ' + response.status)
+          return response.json()
+        })
         .then((data) => {
           itemsFor.value[name] = data
         })
@@ -194,7 +197,10 @@ function setItems() {
   }
   }
   fetch(url + '/metadata')
-    .then((response) => response.json())
+    .then((response) => {
+      if (!response.ok) throw new Error('Cannot reach ITER SimDB server (HTTP ' + response.status + '). Are you connected to the ITER network or VPN?')
+      return response.json()
+    })
     .then((data) => {
       items.value = data.map((el: any) => {
         return { value: el.name, text: el.name }
