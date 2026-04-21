@@ -1,7 +1,7 @@
 import { fileURLToPath, URL } from 'node:url'
 import { execSync } from 'child_process'
 
-import { defineConfig } from 'vite'
+import { defineConfig, loadEnv } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import vueJsx from '@vitejs/plugin-vue-jsx'
 import { nodePolyfills } from 'vite-plugin-node-polyfills'
@@ -27,7 +27,31 @@ function getVersionFromGit() {
 const version = getVersionFromGit()
 
 // https://vitejs.dev/config/
-export default defineConfig({
+export default defineConfig(({ mode }) => {
+  // Read VITE_MRH_SESSION from .env.local (git-ignored, never committed)
+  // Get it from: DevTools → Application → Cookies → simdb.iter.org → MRHSession
+  const env = loadEnv(mode, process.cwd(), '')
+  const mrhSession = env.VITE_MRH_SESSION ?? ''
+
+  return {
+  server: {
+    proxy: {
+      '/scenarios': {
+        target: 'https://simdb.iter.org',
+        changeOrigin: true,
+        secure: true,
+        ...(mrhSession && {
+          headers: { cookie: `MRHSession=${mrhSession}` }
+        }),
+        configure: (proxy) => {
+          proxy.on('proxyRes', (proxyRes) => {
+            // Strip Set-Cookie so the BIG-IP session stays server-side only
+            delete proxyRes.headers['set-cookie']
+          })
+        },
+      },
+    }
+  },
   plugins: [
     vue({
       script: {
@@ -51,5 +75,6 @@ export default defineConfig({
   base: '/dashboard',
   build: {
     target: 'es2015',
+  }
   }
 })

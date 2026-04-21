@@ -19,6 +19,13 @@ npm install
 npm run dev
 ```
 
+> **Authenticating against simdb.iter.org locally:**
+> create `dashboard/.env.local` with session cookie:
+> ```
+> VITE_MRH_SESSION=<value>
+> ```
+> Get the value from: browser → `https://simdb.iter.org` (log in) → DevTools → Application → Cookies → `MRHSession`.
+
 You can build the dashboard using:
 
 ```bash
