@@ -1,9 +1,14 @@
 export { config }
 
-// In development, use a relative URL so the Vite proxy forwards requests
-// to simdb.iter.org (avoids CORS). In production the full URL is used directly.
+// In development, point directly at the local Flask dev server.
+// In production the full SimDB URL is used.
 const _scenariosAPI = import.meta.env.DEV
-  ? '/scenarios/api'
+  ? 'http://localhost:5000'
+  : 'https://simdb.iter.org/scenarios/api'
+
+// The /data endpoint is served by the same server.
+const _dataAPI = import.meta.env.DEV
+  ? 'http://localhost:5000'
   : 'https://simdb.iter.org/scenarios/api'
 
 const config: Readonly<{ [key: string]: any }> = {
@@ -39,6 +44,7 @@ const config: Readonly<{ [key: string]: any }> = {
   ],
   prefix: 'dashboard',
   searchOutputColumns: ['alias/UUID', 'status', 'Upload Date'],
+  dataAPI: _dataAPI,
   rootURL: function (server: string) {
     return server + '/'
   },
