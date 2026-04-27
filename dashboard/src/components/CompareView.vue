@@ -227,6 +227,7 @@ function setItems(username: string, password: string) {
               :uuids="uuids"
               :index="index"
               :loaded="loaded"
+              :server="server"
               @remove="removeSelectedRow"
             >
             </ComparePlot>

@@ -1,7 +1,8 @@
 <!-- eslint-disable no-prototype-builtins -->
 <script setup lang="ts">
+import { ref, watch } from 'vue'
 import { to_i32_array, to_f32_array, to_f64_array } from '../common'
-
+import { config } from '../config'
 import PlotlyLoader from './PlotlyLoader.vue'
 
 type MetaData = {
@@ -29,60 +30,128 @@ const props = defineProps<{
   uuids: string[]
   index: number
   loaded: boolean
+  server: string
 }>()
 
 const emit = defineEmits(['remove'])
 
+// Data fetched from the /data endpoint: uuid → value
+const fetchedData = ref<Record<string, any>>({})
+const fetchedXData = ref<Record<string, any>>({})
+
+/** Convert dot-notation path to slash-notation expected by the /data endpoint.
+ *  e.g. "core_profiles.time" → "core_profiles/time"
+ */
+function nameToPath(name: string): string {
+  return name.replaceAll('.', '/')
+}
+
+async function fetchForUUID(uuid: string, path: string): Promise<any> {
+  const url =
+    config.dataAPI + '/v' + config.api_version +
+    '/simulation/' + uuid + '/data?path=' + encodeURIComponent(path)
+  const resp = await fetch(url)
+  if (!resp.ok) throw new Error('HTTP ' + resp.status)
+  const data = await resp.json()
+  return data.value
+}
+
+async function fetchAllData() {
+  if (!props.loaded || !props.uuids.length) return
+
+  const path = nameToPath(props.name)
+  const timePath = path.split('/')[0] + '/time'
+
+  const newData: Record<string, any> = {}
+  const newXData: Record<string, any> = {}
+
+  await Promise.all(
+    props.uuids.map(async (uuid) => {
+      try {
+        newData[uuid] = await fetchForUUID(uuid, path)
+        if (path !== timePath) {
+          try {
+            newXData[uuid] = await fetchForUUID(uuid, timePath)
+          } catch {
+            // time not available for this simulation
+          }
+        }
+      } catch {
+        // fetch failed – will fall back to metadata values
+      }
+    })
+  )
+
+  fetchedData.value = newData
+  fetchedXData.value = newXData
+}
+
+watch(() => props.loaded, (val) => { if (val) fetchAllData() }, { immediate: true })
+watch(() => props.name, () => {
+  fetchedData.value = {}
+  fetchedXData.value = {}
+  if (props.loaded) fetchAllData()
+})
+
 function getTraces(name: string): PlotData[] {
   return props.uuids.map((uuid) => {
-    let simulation = props.simulations.find((sim) => sim.uuid === uuid)
-    if (simulation === undefined || processValue(getValue(simulation, name)) === 'No data available.') {
+    const simulation = props.simulations.find((sim) => sim.uuid === uuid)
+    const value = getValue(simulation, name)
+    if (simulation === undefined || processValue(value) === 'No data available.') {
       return { y: [], name: '' }
     }
 
-    let value = getValue(simulation, name)
-    if (value._type != 'numpy.ndarray')
-    {
-      let data: PlotData = {
+    const isArrayValue = Array.isArray(value) || value?._type === 'numpy.ndarray'
+
+    if (!isArrayValue) {
+      return {
         y: [value],
+        x: [0],
         name: simulation?.alias || simulation?.uuid
       }
-      let xdata = [0]
-      if (xdata) {
-        data['x'] = xdata
-      }
-      return data
-    }
-    else {
-      let data: PlotData = {
+    } else {
+      const data: PlotData = {
         y: processValue(value),
         name: simulation?.alias || simulation?.uuid
       }
-      let xdata = getXData(simulation, name)
-      if (xdata) {
-        data['x'] = xdata
-      }
+      const xdata = getXData(simulation, name)
+      if (xdata) data['x'] = xdata
       return data
     }
   })
 }
 
-function getValue(simulation: Simulation, name: string) {
-  let item = simulation == null ? null : simulation.items.find((el) => el.element === name)
+function getValue(simulation: Simulation | undefined, name: string) {
+  if (!simulation) return null
+  // Prefer data fetched from the /data endpoint
+  if (Object.hasOwn(fetchedData.value, simulation.uuid)) {
+    return fetchedData.value[simulation.uuid]
+  }
+  // Fall back to simulation metadata
+  const item = simulation.items.find((el) => el.element === name)
   return item != null ? item.value : null
 }
 
 function getXData(simulation: Simulation, name: string) {
-  let root = name.split('.')[0]
-  let time = getValue(simulation, root + '.time')
-  return time ? processValue(time) : null
+  // Prefer fetched time data
+  if (Object.hasOwn(fetchedXData.value, simulation.uuid)) {
+    return processValue(fetchedXData.value[simulation.uuid])
+  }
+  // Fall back to metadata
+  const root = name.split('.')[0]
+  const item = simulation?.items.find((el) => el.element === root + '.time')
+  return item?.value ? processValue(item.value) : null
 }
 
 function processValue(value: any) {
-  
-  if (!value) {
+  if (value === null || value === undefined) {
     return 'No data available.'
   }
+  // Plain JS array returned by the /data endpoint
+  if (Array.isArray(value)) {
+    return value
+  }
+  // Legacy numpy.ndarray format from metadata endpoint
   if (value.hasOwnProperty('_type') && value._type === 'numpy.ndarray') {
     if (value.dtype === 'int32') {
       return to_i32_array(value.bytes)
@@ -98,8 +167,15 @@ function processValue(value: any) {
 }
 
 function isArray(name: string) {
+  // Check data fetched from /data endpoint first (reactive – re-checks after fetch)
+  const hasFetchedArray = props.uuids.some((uuid) => {
+    const v = fetchedData.value[uuid]
+    return Array.isArray(v) || v?._type === 'numpy.ndarray'
+  })
+  if (hasFetchedArray) return true
+  // Fall back to metadata check (supports old API behaviour)
   return props.simulations
-    .map((sim) => getValue(sim, name))
+    .map((sim) => sim.items.find((el) => el.element === name)?.value)
     .some((value) => value && value.hasOwnProperty('_type') && value._type === 'numpy.ndarray')
 }
 

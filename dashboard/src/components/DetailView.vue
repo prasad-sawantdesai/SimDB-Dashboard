@@ -4,6 +4,7 @@ import { config } from '../config'
 import DataRow from './DataRow.vue'
 import AuthDialog from './AuthDialog.vue'
 import RowAdder from './RowAdder.vue'
+import IDSFieldSearch from './IDSFieldSearch.vue'
 
 const _showAllFields =
   typeof config.displayFields === 'string' && new String(config.displayFields).toLowerCase() === 'all'
@@ -27,6 +28,7 @@ const uploadDate = ref('')
 const uploadInfo = ref('')
 const token = ref('')
 const authentication = ref('')
+const ddVersion = ref<string | undefined>()
 
 onMounted(() => {
   const tokens = window.location.pathname.split('/')
@@ -171,6 +173,8 @@ function setItems(username: string, password: string) {
       parents.value = data.parents
       children.value = data.children
       uploadDate.value = data.datetime
+      // Extract DD version from simulation record (field name may vary)
+      ddVersion.value = data.dd_version ?? data.ids_properties_version ?? undefined
       if (showAllFields.value) {
         displayItems.value = data.metadata.map((el: any) => el.element)
       }
@@ -339,6 +343,14 @@ function sortOutputs(key: string) {
         </v-table>
       </v-col>
     </v-row>
+
+    <!-- ── IDS Field Search & Plot ── -->
+    <v-row v-if="uuid?.hex">
+      <v-col>
+        <IDSFieldSearch :simUuid="uuid.hex" :ddVersion="ddVersion" />
+      </v-col>
+    </v-row>
+
     <v-row>
       <v-col>
         <div class="d-flex align-center justify-space-between">

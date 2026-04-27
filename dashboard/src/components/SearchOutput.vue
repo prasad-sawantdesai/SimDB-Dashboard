@@ -295,9 +295,15 @@ function fetchData(username: string, password: string) {
   status.value.show = false
   fetch(url + '/simulations?' + query, args)
     .then((response) => {
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status} ${response.statusText}`)
+      }
       return response.json()
     })
     .then((data: any) => {
+      if (!data.results) {
+        throw new Error(data.error || data.message || 'Unexpected response: missing results field')
+      }
       items.value = data.results.map((el: any) => {
         // Adding a version of the metadata so that the table can dynamically read
         el.metadata.forEach((m: any) => {
