@@ -6,7 +6,7 @@ CACHE_FROM ?= type=local,src=$(CACHE_DIR)
 CACHE_TO ?= type=local,dest=$(CACHE_DIR),mode=max
 
 BUILDER_NAME ?= simdb-builder
-DOCKER_BUILD := docker buildx build --builder $(BUILDER_NAME) --load --build-arg APP_VERSION="$(VERSION)" --cache-from $(CACHE_FROM) --cache-to $(CACHE_TO)
+DOCKER_BUILD := docker buildx build --load --build-arg APP_VERSION="$(VERSION)" --cache-from $(CACHE_FROM) --cache-to $(CACHE_TO)
 DOCKER_COMPOSE := APP_VERSION="$(VERSION)" docker compose
 
 BUILD_IMAGE := simdb-dashboard:build
