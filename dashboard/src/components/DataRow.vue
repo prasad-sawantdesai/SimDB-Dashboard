@@ -209,15 +209,7 @@ watch(
       <v-container style="width: 70%;white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;" class="ml-0">
-        <template v-if="isFetchedArray()">
-          <PlotlyLoader
-            :id="'plot' + index"
-            :traces="getFetchedTraces()"
-            :ylabel="getFieldLabel()"
-            :xlabel="getCoordinateLabel()"
-          ></PlotlyLoader>
-        </template>
-        <template v-else-if="isXML()">
+        <template v-if="isXML()">
           <v-card height="400px" class="scroll">
             <pre style="max-height: 400px"
               >{{ value }}
@@ -241,6 +233,13 @@ watch(
           </span>
         </template>
         <template v-else> No data available. </template>
+        <PlotlyLoader
+          v-if="isFetchedArray()"
+          :id="'plot' + index"
+          :traces="getFetchedTraces()"
+          :ylabel="getFieldLabel()"
+          :xlabel="getCoordinateLabel()"
+        ></PlotlyLoader>
         <v-progress-circular
           v-if="isFetching"
           class="ml-2"
