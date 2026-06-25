@@ -1,9 +1,54 @@
-server {
-    listen 80;
-    server_name localhost;
+# save this template as /etc/nginx/templates/*.template and
+# envsubst will substitute ${SOMETHING} from environment at nginx startup
 
-    location / {
+
+# Special value PUBLIC_SIMDB_HOST="DASHBOARD_HOST" (default set in docker compose) enables the app to send
+# simdb api requests to the backend via nginx proxy at location dashboard_host:dashboard_port/api
+# Otherwise, use it as the literal host of the simdb backend. e.g. PUBLIC_SIMDB_HOST=simdb.iter.org
+map "${PUBLIC_SIMDB_HOST}" $public_dashboard_host {
+    "DASHBOARD_HOST"    $host;
+    default             "${PUBLIC_SIMDB_HOST}";
+}
+server {
+    listen 8080;
+    # listen [::]:8080;
+    server_name _;
+    root /usr/share/nginx/html;
+    absolute_redirect off;
+
+    location = / {
+        return 302 /dashboard/;
+    }
+    location = /dashboard {
+        return 302 /dashboard/;
+    }
+    location /dashboard/ {
+        try_files $uri $uri/ /dashboard/index.html;
+    }
+    location /api/ {
+        # maps /api/v1.2 -> :5000/v1.2 etc
         include proxy_params;
-        proxy_pass http://dashboard:5000;
+        # trailing slash strips /api/ part:
+        proxy_pass http://${API_HOST}:${API_PORT}/;
+    }
+    # maps /v1.2 -> :5000/v1.2 etc
+    # note w/o trailing slash (don't remove /v1.2)
+    location /v1/ { include proxy_params; proxy_pass http://${API_HOST}:${API_PORT}; }
+    location /v1.1/ { include proxy_params; proxy_pass http://${API_HOST}:${API_PORT}; }
+    location /v1.2/ { include proxy_params; proxy_pass http://${API_HOST}:${API_PORT}; }
+    location /swaggerui/ { include proxy_params; proxy_pass http://${API_HOST}:${API_PORT}; }
+
+    location = /dashboard/runtime-config.js {
+        default_type application/javascript;
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+        try_files /runtime-config-template.js =404;
+        sub_filter_once off;
+        sub_filter_types application/javascript;
+        # Optional tokens to replace in template:
+        sub_filter 'SCHEME' '$scheme';
+        sub_filter 'PUBLIC_SIMDB_HOST' '$public_dashboard_host';
+        sub_filter 'DASHBOARD_PORT' '${DASHBOARD_PORT}';
+        sub_filter 'API_HOST' '${API_HOST}';
+        sub_filter 'API_PORT' '${API_PORT}';
     }
 }

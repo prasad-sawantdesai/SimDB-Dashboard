@@ -1,7 +1,8 @@
-# This workflow will do a clean installation of node dependencies, cache/restore them, build the source code and run tests across different versions of node
-# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-nodejs
-
 name: CI/CD Pipeline
+
+env:
+  CACHE_FROM: type=gha,scope=simdb-dashboard
+  CACHE_TO: type=gha,mode=max,scope=simdb-dashboard
 
 on:
   push:
@@ -10,75 +11,133 @@ on:
     branches: [ "develop" ]
 
 jobs:
-  test:
-    name: Test and Lint
-    runs-on: ubuntu-22.04
-
-    strategy:
-      matrix:
-        node-version: [18.x, 20.x, 22.x]
-        # See supported Node.js release schedule at https://nodejs.org/en/about/releases/
-
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v7
-    
-    - name: Use Node.js ${{ matrix.node-version }}
-      uses: actions/setup-node@v6
-      with:
-        node-version: ${{ matrix.node-version }}
-        cache: 'npm'
-        cache-dependency-path: dashboard/package-lock.json
-
-    - name: Install dependencies
-      run: |
-        cd dashboard
-        npm ci
-        
-    - name: Run linter
-      run: |
-        cd dashboard
-        npm run lint
-        
-    - name: Run type check
-      run: |
-        cd dashboard
-        npm run type-check        
-        
-    - name: Upload coverage reports
-      uses: codecov/codecov-action@v7
-      with:
-        directory: ./dashboard/coverage
-
   build:
-    name: Build Application
-    runs-on: ubuntu-22.04
-    needs: test
-    
+    name: Build, test, and package
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.value }}
+    permissions:
+      contents: read
     steps:
     - name: Checkout code
       uses: actions/checkout@v7
-      
-    - name: Use Node.js ${{ matrix.node-version }}
-      uses: actions/setup-node@v6
       with:
-        node-version: ${{ matrix.node-version }}
-        cache: 'npm'
-        cache-dependency-path: dashboard/package-lock.json
-        
-    - name: Install dependencies
-      run: |
-        cd dashboard
-        npm ci
-        
-    - name: Build application
-      run: |
-        cd dashboard
-        npm run build
-        
-    - name: Upload build artifacts
-      uses: actions/upload-artifact@v7
+        fetch-tags: true
+        fetch-depth: 0
+
+    - name: Get version
+      id: version
+      run: echo "value=$(git describe --tags --always 2>/dev/null || echo 0.0.0-unknown)" >> "$GITHUB_OUTPUT"
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v4
+
+    # APP_VERSION is _not_ passed to lint/test targets: those stages inherit from
+    # the builder stage which does not consume it, so omitting it avoids
+    # unnecessary cache invalidation on every run.
+    - name: Build lint target
+      uses: docker/build-push-action@v7
       with:
-        name: dist
-        path: dashboard/dist/
-        retention-days: 7        
+        context: .
+        target: lint
+        push: false
+        cache-from: ${{ env.CACHE_FROM }}
+        cache-to: ${{ env.CACHE_TO }}
+
+    - name: Build test target
+      uses: docker/build-push-action@v7
+      with:
+        context: .
+        target: test
+        push: false
+        cache-from: ${{ env.CACHE_FROM }}
+        cache-to: ${{ env.CACHE_TO }}
+
+    # APP_VERSION is embedded into the static assets at build time
+    - name: Build build target image
+      uses: docker/build-push-action@v7
+      with:
+        context: .
+        target: build
+        push: false
+        load: true
+        tags: simdb-dashboard:build
+        build-args: APP_VERSION=${{ steps.version.outputs.value }}
+        cache-from: ${{ env.CACHE_FROM }}
+        cache-to: ${{ env.CACHE_TO }}
+
+    - name: Build service image
+      uses: docker/build-push-action@v7
+      with:
+        context: .
+        target: service
+        push: false
+        load: true
+        tags: simdb-dashboard:service
+        build-args: APP_VERSION=${{ steps.version.outputs.value }}
+        cache-from: ${{ env.CACHE_FROM }}
+        cache-to: ${{ env.CACHE_TO }}
+
+    - name: Extract static dist assets
+      run: |
+        rm -rf "${{ runner.temp }}/dist"
+        mkdir -p "${{ runner.temp }}/dist"
+        docker rm -f tmp_dist_container >/dev/null 2>&1 || true
+        docker create --name tmp_dist_container simdb-dashboard:build >/dev/null
+        docker cp tmp_dist_container:/app/dist/. "${{ runner.temp }}/dist"
+        docker rm tmp_dist_container >/dev/null
+
+    - name: Upload static assets artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: simdb-dashboard-dist
+        path: ${{ runner.temp }}/dist/
+        retention-days: 7
+
+    - name: Export service image tar
+      run: docker save -o "${{ runner.temp }}/simdb-dashboard-service.tar" simdb-dashboard:service
+
+    - name: Upload service image artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: simdb-dashboard-service
+        path: ${{ runner.temp }}/simdb-dashboard-service.tar
+        retention-days: 7
+
+  publish:
+    name: Publish service image
+    if: ${{ github.event_name == 'push' }}
+    runs-on: ubuntu-latest
+    needs: build
+    permissions:
+      contents: read
+      packages: write
+    steps:
+    - name: Lowercase repo-owner
+      id: repo_owner
+      run: echo "value=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+
+    - name: Download service image artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: simdb-dashboard-service
+        path: ${{ runner.temp }}
+
+    - name: Load service image
+      run: docker load -i "${{ runner.temp }}/simdb-dashboard-service.tar"
+
+    - name: Login to GitHub Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Tag service image for registry
+      run: |
+        docker tag \
+          simdb-dashboard:service \
+          ghcr.io/${{ steps.repo_owner.outputs.value }}/simdb-dashboard:service-${{ needs.build.outputs.version }}
+
+    - name: Push service image
+      run: docker push ghcr.io/${{ steps.repo_owner.outputs.value }}/simdb-dashboard:service-${{ needs.build.outputs.version }}
