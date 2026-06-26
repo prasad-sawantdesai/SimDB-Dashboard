@@ -99,6 +99,7 @@ const shouldShow = ref(false);
 
 onMounted(() => {
   let params = new URLSearchParams(window.location.search);
+  selectedServer.value = params.get('__server') || config.defaultServer
   let keys = new Set(params.keys());
   for (let key of keys) {
     if (key.startsWith('__')) {
