@@ -210,14 +210,13 @@ function setItems() {
 }
 
 function getQueryPath() {
-  return (
-    '?__server=' +
-    encodeURIComponent(selectedServer.value) +
-    '&' +
-    config.searchOutputFields.join('&') +
-    '&' +
-    getQuery()
-  )
+  const params = new URLSearchParams()
+  params.set('__server', selectedServer.value)
+  const query = new URLSearchParams(getQuery())
+  query.forEach((value, key) => {
+    params.append(key, value)
+  })
+  return `?${params.toString()}`
 }
 
 // UUID helper functions at the top of your script
@@ -230,7 +229,7 @@ function isValidUUID(value: string): boolean {
 }
 
 function getQuery() {
-  let args = []
+  const args = new URLSearchParams()
   for (let i = 0; i < searchFields.value.length; i++) {
     const name = searchFields.value[i].name
     const comp = searchFields.value[i].comparator + ':'
@@ -243,17 +242,17 @@ function getQuery() {
 
       if(name === 'alias'){
         if (isValidUUID(value.toString())){
-          args.push('uuid' + '=' + comp + value)
+          args.append('uuid', comp + value)
         }
         else{
-          args.push(name + '=' + comp + value)
+          args.append(name, comp + value)
         }
       }
       else
       if (value.trim) {
-        args.push(name + '=' + comp + value.trim())
+        args.append(name, comp + value.trim())
       } else {
-        args.push(name + '=' + comp + value)
+        args.append(name, comp + value)
       }
     }
   }
@@ -267,13 +266,13 @@ function getQuery() {
         return ''
       }
       if (value.trim) {
-        args.push(name + '=' + comp + value.trim())
+        args.append(name, comp + value.trim())
       } else {
-        args.push(name + '=' + comp + value)
+        args.append(name, comp + value)
       }
     }
   }
-  return args.join('&')
+  return args.toString()
 }
 
 function changed() {
