@@ -2,13 +2,6 @@
 # envsubst will substitute ${SOMETHING} from environment at nginx startup
 
 
-# Special value PUBLIC_SIMDB_HOST="DASHBOARD_HOST" (default set in docker compose) enables the app to send
-# simdb api requests to the backend via nginx proxy at location dashboard_host:dashboard_port/api
-# Otherwise, use it as the literal host of the simdb backend. e.g. PUBLIC_SIMDB_HOST=simdb.iter.org
-map "${PUBLIC_SIMDB_HOST}" $public_dashboard_host {
-    "DASHBOARD_HOST"    $host;
-    default             "${PUBLIC_SIMDB_HOST}";
-}
 server {
     listen 8080;
     # listen [::]:8080;
@@ -25,10 +18,19 @@ server {
     location /dashboard/ {
         try_files $uri $uri/ /dashboard/index.html;
     }
-    location /api/ {
-        # maps /api/v1.2 -> :5000/v1.2 etc
+    location = /scenarios/api {
+        return 301 /scenarios/api/;
+    }
+    location /scenarios/api/ {
+        # Match the production public route:
+        # /scenarios/api/v1.2/... -> http://API_HOST:API_PORT/v1.2/...
         include proxy_params;
-        # trailing slash strips /api/ part:
+        proxy_pass http://${API_HOST}:${API_PORT}/;
+    }
+    location /api/ {
+        # Local/dev compatibility alias:
+        # /api/v1.2/... -> http://API_HOST:API_PORT/v1.2/...
+        include proxy_params;
         proxy_pass http://${API_HOST}:${API_PORT}/;
     }
     # maps /v1.2 -> :5000/v1.2 etc
@@ -44,11 +46,9 @@ server {
         try_files /runtime-config-template.js =404;
         sub_filter_once off;
         sub_filter_types application/javascript;
-        # Optional tokens to replace in template:
-        sub_filter 'SCHEME' '$scheme';
-        sub_filter 'PUBLIC_SIMDB_HOST' '$public_dashboard_host';
-        sub_filter 'DASHBOARD_PORT' '${DASHBOARD_PORT}';
-        sub_filter 'API_HOST' '${API_HOST}';
-        sub_filter 'API_PORT' '${API_PORT}';
+        # Inject the browser-facing SimDB endpoint at container startup. The
+        # default matches production (/scenarios/api), so test deployments can
+        # use the same public route shape as production.
+        sub_filter 'SIMDB_SERVER_URL' '${PUBLIC_SIMDB_URL}';
     }
 }

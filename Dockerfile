@@ -14,6 +14,11 @@ CMD ["sh", "-c", "[ -x node_modules/.bin/vite ] || npm ci; npm run dev -- --host
 FROM builder AS lint
 RUN npm run lint
 
+# Type-check stage: verify Vue/TypeScript without emitting files.
+# Keep this separate from lint because eslint does not catch Vue template/type errors.
+FROM builder AS type-check
+RUN npm run type-check
+
 # Test stage: run unit tests against prepared source and dependencies.
 FROM builder AS test
 RUN npm run test:unit -- --run
@@ -27,6 +32,9 @@ RUN npm run build
 # Service stage: serve compiled static assets with nginx.
 FROM nginx:1.27-alpine AS service
 COPY docker/dashboard.nginx /etc/nginx/templates/default.conf.template
+# Include the runtime config template in the image so the service image works
+# standalone, not only when docker-compose mounts ./docker/runtime-config-template.js.
+COPY docker/runtime-config-template.js /usr/share/nginx/html/runtime-config-template.js
 # App expects itself at urlpath /dashboard
 COPY --from=build /app/dist /usr/share/nginx/html/dashboard
 EXPOSE 8080

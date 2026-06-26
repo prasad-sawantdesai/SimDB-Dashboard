@@ -18,6 +18,7 @@ SERVICE_IMAGE := simdb-dashboard:service
 	down \
 	builder \
 	lint \
+	type-check \
 	test \
 	build \
 	dev \
@@ -31,7 +32,7 @@ SERVICE_IMAGE := simdb-dashboard:service
 
 help:
 	@echo "Core workflow:"
-	@echo "  make service         Build lint stage, build stage, then tag final service image"
+	@echo "  make service         Build and tag final service image"
 	@echo ""
 	@echo "Compose service (make service first):"
 	@echo "  make up              Start simdb-dashboard service using prebuilt service image"
@@ -40,6 +41,7 @@ help:
 	@echo "Dockerfile stage targets:"
 	@echo "  make builder         Build builder stage (dependency setup + source prep)"
 	@echo "  make lint            Build and run lint stage"
+	@echo "  make type-check      Build and run TypeScript/Vue type-check stage"
 	@echo "  make test            Build and run Docker test stage"
 	@echo "  make build           Build application build stage and tag $(BUILD_IMAGE)"
 	@echo ""
@@ -49,6 +51,7 @@ help:
 	@echo ""
 	@echo "Artifacts and maintenance:"
 	@echo "  make dist            Save static app/dist artifact from $(BUILD_IMAGE) to ./dist"
+	@echo "  make service-nocache Rebuild service image without Docker layer cache"
 	@echo "  make update-base     Rebuild service image pulling latest base images"
 	@echo "  make update-deps     Update npm lockfile and audit-fix deps via Docker"
 	@echo "  make distclean       Remove local artifacts and compose runtime state"
@@ -72,6 +75,9 @@ builder:
 lint:
 	$(DOCKER_BUILD) --target lint .
 
+type-check:
+	$(DOCKER_BUILD) --target type-check .
+
 test:
 	$(DOCKER_BUILD) --target test .
 
@@ -80,6 +86,11 @@ build:
 
 service:
 	$(DOCKER_BUILD) --target service -t $(SERVICE_IMAGE) .
+
+# Escape hatch for development machines where Docker reuses a stale layer even
+# after frontend source changes; normal builds should still use cached layers.
+service-nocache:
+	$(DOCKER_BUILD) --no-cache --target service -t $(SERVICE_IMAGE) .
 
 # Developer utilities
 dev:
@@ -97,7 +108,8 @@ dist: build
 	mkdir -p dist
 	docker rm -f tmp_dist_container >/dev/null 2>&1 || true
 	docker create --name tmp_dist_container $(BUILD_IMAGE) >/dev/null
-	docker cp tmp_dist_container:/app/dist ./dist
+	# Copy the contents of /app/dist, not the directory itself, to avoid dist/dist.
+	docker cp tmp_dist_container:/app/dist/. ./dist
 	docker rm tmp_dist_container >/dev/null
 
 update-base:
@@ -119,4 +131,3 @@ distclean:
 # Deployment
 deploy:
 	@echo "TODO define deploy workflow here"
-

@@ -44,6 +44,15 @@ jobs:
         cache-from: ${{ env.CACHE_FROM }}
         cache-to: ${{ env.CACHE_TO }}
 
+    - name: Build type-check target
+      uses: docker/build-push-action@v7
+      with:
+        context: .
+        target: type-check
+        push: false
+        cache-from: ${{ env.CACHE_FROM }}
+        cache-to: ${{ env.CACHE_TO }}
+
     - name: Build test target
       uses: docker/build-push-action@v7
       with:
